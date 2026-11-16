@@ -1,0 +1,377 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vision Benchmark</title>
+<style>
+  :root { --ink:#15171C; --muted:#5A606C; --line:#E4E5E9; --bg:#F6F6F3; --card:#fff; --blue:#3846C4; --orange:#C25E14; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: Inter, system-ui, sans-serif; color:var(--ink); background:var(--bg); font-size:14px; }
+  main { max-width: 1200px; margin: 0 auto; padding: 24px 16px 48px; display:flex; flex-direction:column; gap:20px; }
+  h1 { margin:0; font-size:24px; } h2 { margin:0 0 10px; font-size:16px; }
+  p { margin:0; }
+  .muted { color:var(--muted); }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:18px; }
+  .grid { display:grid; grid-template-columns: minmax(0,3fr) minmax(0,2fr); gap:20px; }
+  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+  .stage { position:relative; width:100%; aspect-ratio:16/9; background:#1B1E26; border-radius:12px; overflow:hidden; }
+  .stage video, .stage canvas { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; transform:scaleX(-1); }
+  .controls { display:flex; flex-wrap:wrap; gap:12px; align-items:end; }
+  label { display:flex; flex-direction:column; gap:4px; font-weight:600; font-size:12px; }
+  select { min-height:40px; border:1px solid #D9DBE0; border-radius:10px; padding:0 10px; font:inherit; background:#fff; }
+  .chk { flex-direction:row; align-items:center; gap:8px; min-height:40px; }
+  button { min-height:44px; padding:0 18px; border-radius:12px; border:1px solid #D9DBE0; background:#fff; font:inherit; font-weight:600; cursor:pointer; }
+  button.primary { background:var(--blue); color:#fff; border-color:var(--blue); }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  td { padding:7px 0; border-top:1px solid #EEEFF2; } td:last-child { text-align:right; font-weight:600; font-variant-numeric: tabular-nums; }
+  .verdict { padding:14px 16px; border-radius:12px; font-weight:600; line-height:1.45; }
+  .ok { background:#ECEEFC; color:#2F3BA8; } .warn { background:#FDF0E4; color:#8F4510; }
+  pre { margin:0; background:#F3F3F0; border-radius:10px; padding:12px; font-size:12px; overflow:auto; max-height:260px; }
+  .bar { height:6px; border-radius:3px; background:#EEEFF2; overflow:hidden; margin-top:8px; } .bar > div { height:100%; width:0; background:var(--blue); transition:width .2s; }
+</style>
+</head>
+<body>
+<main>
+  <div>
+    <h1>PrepToPresent · body-tracking benchmark</h1>
+    <p class="muted">Runs face + pose tracking on your webcam the same way the rehearsal screen will, optionally while recording, and measures whether this device keeps up. Nothing is uploaded.</p>
+  </div>
+
+  <div class="card controls">
+    <label>Camera
+      <select id="camera"><option value="">Default camera</option></select>
+    </label>
+    <label>Tracking rate
+      <select id="fps"><option value="5">5 fps</option><option value="10" selected>10 fps (planned)</option><option value="15">15 fps</option><option value="30">30 fps (stress)</option></select>
+    </label>
+    <label>Processor
+      <select id="delegate"><option value="GPU" selected>GPU (normal)</option><option value="CPU">CPU only (simulate weak laptop)</option></select>
+    </label>
+    <label>Models
+      <select id="models"><option value="both" selected>Face + pose</option><option value="face">Face only</option><option value="pose">Pose only</option></select>
+    </label>
+    <label class="chk"><input type="checkbox" id="record" checked> Record video + audio at the same time</label>
+    <label class="chk"><input type="checkbox" id="overlay" checked> Draw landmarks</label>
+    <button id="start" class="primary">Start camera</button>
+    <button id="bench" disabled>Run 60 s benchmark</button>
+    <button id="stop" disabled>Stop</button>
+  </div>
+
+  <div class="grid">
+    <div class="card" style="display:flex; flex-direction:column; gap:12px">
+      <div class="stage"><video id="video" playsinline muted></video><canvas id="canvas"></canvas></div>
+      <p id="status" class="muted">Press “Start camera”. The first start downloads the models (~10 MB).</p>
+      <div class="bar"><div id="progress"></div></div>
+    </div>
+    <div style="display:flex; flex-direction:column; gap:20px">
+      <div class="card">
+        <h2>Live</h2>
+        <table>
+          <tr><td>Achieved tracking rate</td><td id="s-fps">–</td></tr>
+          <tr><td>Face model, avg / p95</td><td id="s-face">–</td></tr>
+          <tr><td>Pose model, avg / p95</td><td id="s-pose">–</td></tr>
+          <tr><td>Budget used per frame</td><td id="s-budget">–</td></tr>
+          <tr><td>Face detected</td><td id="s-facehit">–</td></tr>
+          <tr><td>Upper body detected</td><td id="s-posehit">–</td></tr>
+          <tr><td>Head yaw / pitch (eye-contact proxy)</td><td id="s-head">–</td></tr>
+          <tr><td>Shoulder tilt (posture proxy)</td><td id="s-shoulder">–</td></tr>
+          <tr><td>Hands visible</td><td id="s-hands">–</td></tr>
+        </table>
+      </div>
+      <div class="card">
+        <h2>Device</h2>
+        <table>
+          <tr><td>WebGL renderer (GPU the browser uses)</td><td id="d-gpu" style="max-width:220px; overflow-wrap:anywhere">–</td></tr>
+          <tr><td>CPU threads</td><td id="d-cpu">–</td></tr>
+          <tr><td>Memory (browser estimate)</td><td id="d-mem">–</td></tr>
+          <tr><td>Camera resolution</td><td id="d-cam">–</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" id="result-card" hidden>
+    <h2>Benchmark result</h2>
+    <div id="verdict" class="verdict"></div>
+    <p class="muted" style="margin:12px 0 8px">Copy this and paste it back to Claude:</p>
+    <pre id="json"></pre>
+    <button id="copy" style="margin-top:10px">Copy result</button>
+  </div>
+</main>
+
+<script type="module">
+import { FilesetResolver, FaceLandmarker, PoseLandmarker, DrawingUtils }
+  from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
+
+const WASM = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm";
+const FACE_MODEL = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task";
+const POSE_MODEL = "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task";
+
+const $ = (id) => document.getElementById(id);
+const video = $("video"), canvas = $("canvas"), ctx = canvas.getContext("2d");
+let fileset, face = null, pose = null, loadedKey = "";
+let stream = null, recorder = null, recChunks = [], recBytes = 0;
+let running = false, lastTick = 0, loopHandle = 0;
+let stats = freshStats();
+let bench = null; // { start, durationMs }
+
+function freshStats() {
+  return { frames: 0, faceMs: [], poseMs: [], totalMs: [], faceHits: 0, poseHits: 0, handsHits: 0,
+           t0: performance.now(), late: 0, yaw: null, pitch: null, tilt: null, warm: 0 };
+}
+
+// ---------- device info ----------
+(function deviceInfo() {
+  try {
+    const gl = document.createElement("canvas").getContext("webgl");
+    const ext = gl && gl.getExtension("WEBGL_debug_renderer_info");
+    $("d-gpu").textContent = ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : (gl ? gl.getParameter(gl.RENDERER) : "WebGL unavailable");
+  } catch { $("d-gpu").textContent = "unknown"; }
+  $("d-cpu").textContent = navigator.hardwareConcurrency ?? "unknown";
+  $("d-mem").textContent = navigator.deviceMemory ? `≥ ${navigator.deviceMemory} GB` : "unknown";
+})();
+
+// ---------- models ----------
+async function loadModels() {
+  const delegate = $("delegate").value, which = $("models").value;
+  const key = `${delegate}|${which}`;
+  if (key === loadedKey) return;
+  setStatus(`Loading models (${delegate})…`);
+  fileset ??= await FilesetResolver.forVisionTasks(WASM);
+  face?.close(); pose?.close(); face = pose = null;
+  if (which !== "pose") {
+    face = await FaceLandmarker.createFromOptions(fileset, {
+      baseOptions: { modelAssetPath: FACE_MODEL, delegate },
+      runningMode: "VIDEO", numFaces: 1,
+      outputFaceBlendshapes: true, outputFacialTransformationMatrixes: true,
+    });
+  }
+  if (which !== "face") {
+    pose = await PoseLandmarker.createFromOptions(fileset, {
+      baseOptions: { modelAssetPath: POSE_MODEL, delegate },
+      runningMode: "VIDEO", numPoses: 1,
+    });
+  }
+  loadedKey = key;
+}
+
+// ---------- camera ----------
+async function startCamera() {
+  $("start").disabled = true;
+  try {
+    const deviceId = $("camera").value;
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 }, ...(deviceId ? { deviceId: { exact: deviceId } } : {}) },
+      audio: true,
+    });
+  } catch (e) {
+    setStatus(`Camera/mic blocked: ${e.message}. Allow access and reload.`); $("start").disabled = false; return;
+  }
+  video.srcObject = stream; await video.play();
+  await listCameras();
+  const track = stream.getVideoTracks()[0];
+  const s = track.getSettings();
+  $("camera").value = s.deviceId ?? "";
+  $("d-cam").textContent = `${track.label || "camera"} · ${s.width}×${s.height} @ ${Math.round(s.frameRate ?? 0)} fps`;
+  canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+  try { await loadModels(); } catch (e) { setStatus(`Model load failed: ${e.message}`); return; }
+  running = true; stats = freshStats();
+  $("bench").disabled = false; $("stop").disabled = false;
+  setStatus("Tracking. Sit as you would to present, then run the benchmark.");
+  loop();
+}
+
+async function listCameras() {
+  const sel = $("camera"), current = sel.value;
+  const cams = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === "videoinput");
+  sel.innerHTML = "";
+  cams.forEach((c, i) => sel.add(new Option(c.label || `Camera ${i + 1}`, c.deviceId)));
+  if (current) sel.value = current;
+}
+
+async function switchCamera() {
+  if (!running) return;
+  running = false; cancelAnimationFrame(loopHandle); stopRecording();
+  stream?.getTracks().forEach((t) => t.stop());
+  await startCamera();
+}
+
+function stopAll() {
+  running = false; cancelAnimationFrame(loopHandle);
+  stopRecording();
+  stream?.getTracks().forEach((t) => t.stop()); stream = null;
+  $("start").disabled = false; $("bench").disabled = true; $("stop").disabled = true;
+  setStatus("Stopped.");
+}
+
+// ---------- recording (simulates the real rehearsal load) ----------
+function startRecording() {
+  recChunks = []; recBytes = 0;
+  const type = ["video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"].find((t) => MediaRecorder.isTypeSupported(t));
+  recorder = new MediaRecorder(stream, { mimeType: type, videoBitsPerSecond: 1_500_000, audioBitsPerSecond: 32_000 });
+  recorder.ondataavailable = (e) => { if (e.data.size) { recChunks.push(e.data); recBytes += e.data.size; } };
+  recorder.start(2000); // 2 s chunks, like a chunked upload would use
+}
+function stopRecording() { if (recorder && recorder.state !== "inactive") recorder.stop(); recorder = null; }
+
+// ---------- main loop ----------
+function loop() {
+  if (!running) return;
+  loopHandle = requestAnimationFrame(loop);
+  // Deadline scheduler: keeps the target rate even though rAF only ticks every ~16 ms.
+  const interval = 1000 / Number($("fps").value);
+  const now = performance.now();
+  if (lastTick && now + 4 < lastTick) return;          // lastTick holds the next due time
+  if (lastTick && now - lastTick > interval * 0.5) stats.late++;
+  lastTick = Math.max((lastTick || now) + interval, now);
+  processFrame(now);
+}
+
+const WARMUP_FRAMES = 15; // first inferences compile GPU shaders; don't count them
+
+function processFrame(ts) {
+  const t0 = performance.now();
+  let fr = null, pr = null, fMs = 0, pMs = 0;
+  if (face) { const a = performance.now(); fr = face.detectForVideo(video, ts); fMs = performance.now() - a; }
+  if (pose) { const a = performance.now(); pr = pose.detectForVideo(video, ts); pMs = performance.now() - a; }
+  if (stats.warm < WARMUP_FRAMES) {
+    stats.warm++;
+    if (stats.warm === WARMUP_FRAMES) stats.t0 = performance.now();
+    if ($("overlay").checked) draw(fr, pr);
+    return;
+  }
+  if (face) stats.faceMs.push(fMs);
+  if (pose) stats.poseMs.push(pMs);
+  stats.totalMs.push(performance.now() - t0);
+  stats.frames++;
+
+  if (fr?.faceLandmarks?.length) {
+    stats.faceHits++;
+    const m = fr.facialTransformationMatrixes?.[0]?.data;
+    if (m) { // column-major 4x4; derive yaw/pitch from rotation part
+      stats.yaw = Math.atan2(m[8], m[10]) * 180 / Math.PI;
+      stats.pitch = Math.asin(-Math.max(-1, Math.min(1, m[9]))) * 180 / Math.PI;
+    }
+  }
+  if (pr?.landmarks?.length) {
+    const lm = pr.landmarks[0];
+    const ls = lm[11], rs = lm[12];
+    if (ls.visibility > 0.5 && rs.visibility > 0.5) {
+      stats.poseHits++;
+      stats.tilt = Math.atan2(rs.y - ls.y, rs.x - ls.x) * 180 / Math.PI;
+      stats.tilt = stats.tilt > 90 ? stats.tilt - 180 : stats.tilt < -90 ? stats.tilt + 180 : stats.tilt;
+    }
+    if ((lm[15].visibility > 0.5) || (lm[16].visibility > 0.5)) stats.handsHits++;
+  }
+
+  if ($("overlay").checked) draw(fr, pr); else ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if (stats.frames % 5 === 0) render();
+  if (bench) {
+    const p = Math.min(1, (performance.now() - bench.start) / bench.durationMs);
+    $("progress").style.width = `${p * 100}%`;
+    if (p >= 1) finishBench();
+  }
+}
+
+function draw(fr, pr) {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  const du = new DrawingUtils(ctx);
+  if (fr?.faceLandmarks?.[0]) du.drawConnectors(fr.faceLandmarks[0], FaceLandmarker.FACE_LANDMARKS_FACE_OVAL, { color: "#AEB7FF", lineWidth: 2 });
+  if (pr?.landmarks?.[0]) {
+    du.drawConnectors(pr.landmarks[0], PoseLandmarker.POSE_CONNECTIONS, { color: "#F2A65A", lineWidth: 3 });
+    du.drawLandmarks(pr.landmarks[0], { color: "#fff", radius: 2 });
+  }
+}
+
+// ---------- stats ----------
+const avg = (a) => a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0;
+const p95 = (a) => { if (!a.length) return 0; const s = [...a].sort((x, y) => x - y); return s[Math.floor(s.length * 0.95)]; };
+const pct = (n) => stats.frames ? `${Math.round(100 * n / stats.frames)}%` : "–";
+
+function summary() {
+  const secs = (performance.now() - stats.t0) / 1000;
+  const target = Number($("fps").value);
+  const budget = 1000 / target;
+  return {
+    targetFps: target,
+    achievedFps: +(stats.frames / secs).toFixed(1),
+    delegate: $("delegate").value,
+    models: $("models").value,
+    recording: !!recorder || $("record").checked,
+    faceMsAvg: +avg(stats.faceMs).toFixed(1), faceMsP95: +p95(stats.faceMs).toFixed(1),
+    poseMsAvg: +avg(stats.poseMs).toFixed(1), poseMsP95: +p95(stats.poseMs).toFixed(1),
+    totalMsAvg: +avg(stats.totalMs).toFixed(1), totalMsP95: +p95(stats.totalMs).toFixed(1),
+    budgetUsedPct: Math.round(100 * avg(stats.totalMs) / budget),
+    lateFrames: stats.late, frames: stats.frames,
+    faceDetectedPct: stats.frames ? Math.round(100 * stats.faceHits / stats.frames) : 0,
+    upperBodyDetectedPct: stats.frames ? Math.round(100 * stats.poseHits / stats.frames) : 0,
+    handsVisiblePct: stats.frames ? Math.round(100 * stats.handsHits / stats.frames) : 0,
+    gpu: $("d-gpu").textContent, cpuThreads: navigator.hardwareConcurrency, camera: $("d-cam").textContent,
+    browser: navigator.userAgent,
+  };
+}
+
+function render() {
+  const s = summary();
+  $("s-fps").textContent = `${s.achievedFps} / ${s.targetFps} fps`;
+  $("s-face").textContent = face ? `${s.faceMsAvg} / ${s.faceMsP95} ms` : "off";
+  $("s-pose").textContent = pose ? `${s.poseMsAvg} / ${s.poseMsP95} ms` : "off";
+  $("s-budget").textContent = `${s.budgetUsedPct}%`;
+  $("s-facehit").textContent = pct(stats.faceHits);
+  $("s-posehit").textContent = pct(stats.poseHits);
+  $("s-hands").textContent = pct(stats.handsHits);
+  $("s-head").textContent = stats.yaw == null ? "–" : `${stats.yaw.toFixed(0)}° / ${stats.pitch.toFixed(0)}°`;
+  $("s-shoulder").textContent = stats.tilt == null ? "–" : `${stats.tilt.toFixed(1)}°`;
+}
+
+// ---------- benchmark ----------
+async function runBench() {
+  $("bench").disabled = true;
+  try { await loadModels(); } catch (e) { setStatus(`Model load failed: ${e.message}`); $("bench").disabled = false; return; }
+  stats = freshStats(); lastTick = 0;
+  if ($("record").checked) startRecording();
+  bench = { start: performance.now(), durationMs: 60_000 };
+  $("result-card").hidden = true;
+  setStatus("Benchmarking for 60 s. Talk and gesture as if presenting.");
+}
+
+function finishBench() {
+  const s = summary();
+  bench = null;
+  const recSecs = 60;
+  stopRecording();
+  setTimeout(() => {
+    if ($("record").checked) {
+      s.recordedMB60s = +(recBytes / 1e6).toFixed(1);
+      s.projected15minMB = Math.round(recBytes / 1e6 * (900 / recSecs));
+    }
+    const smooth = s.achievedFps >= s.targetFps * 0.9 && s.budgetUsedPct < 60;
+    const tight = s.achievedFps >= s.targetFps * 0.75 && s.budgetUsedPct < 90;
+    const v = $("verdict");
+    v.className = "verdict " + (smooth ? "ok" : "warn");
+    v.textContent = smooth
+      ? `Comfortable: tracking used ${s.budgetUsedPct}% of the time available per frame at ${s.targetFps} fps. This device can track live during rehearsal.`
+      : tight
+      ? `Tight: ${s.achievedFps} of ${s.targetFps} fps, ${s.budgetUsedPct}% of the frame budget used. Works, but the app should drop to a lower rate on devices like this.`
+      : `Too slow at ${s.targetFps} fps (${s.achievedFps} achieved). Try 5 fps; if still slow, this class of device needs the after-recording fallback.`;
+    $("json").textContent = JSON.stringify(s, null, 2);
+    $("result-card").hidden = false; $("bench").disabled = false; $("progress").style.width = "0";
+    setStatus("Done. Change settings and run again to compare (e.g. CPU only).");
+  }, 300);
+}
+
+function setStatus(t) { $("status").textContent = t; }
+
+$("start").onclick = startCamera;
+$("camera").onchange = switchCamera;
+listCameras().catch(() => {});
+$("stop").onclick = stopAll;
+$("bench").onclick = runBench;
+$("copy").onclick = () => navigator.clipboard.writeText($("json").textContent).then(() => setStatus("Result copied."));
+for (const id of ["delegate", "models"]) $(id).onchange = async () => { if (running) { try { await loadModels(); stats = freshStats(); setStatus("Models switched."); } catch (e) { setStatus(`Model load failed: ${e.message}`); } } };
+$("fps").onchange = () => { stats = freshStats(); };
+</script>
+</body>
+</html>
