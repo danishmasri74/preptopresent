@@ -1,0 +1,12 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+
+# Native build scripts we don't need (pnpm 10 asks to approve these)
+ignoredBuiltDependencies:
+  - sharp
+  - unrs-resolver
+
+# Packages allowed to run install scripts (Supabase CLI downloads its binary)
+onlyBuiltDependencies:
+  - supabase

@@ -1,0 +1,37 @@
+# Keeps the free-tier Supabase dev project from pausing after ~7 days of inactivity
+# by making one tiny read every 3 days. Remove once the project is on a paid plan.
+#
+# Requires repository secrets (Settings > Secrets and variables > Actions):
+#   SUPABASE_URL              e.g. https://<ref>.supabase.co
+#   SUPABASE_PUBLISHABLE_KEY  the sb_publishable_ key (public; RLS still applies)
+
+name: Supabase keep-alive
+
+on:
+  schedule:
+    - cron: "17 3 */3 * *" # 03:17 UTC every 3 days
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Query the database through the REST API
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_PUBLISHABLE_KEY" ]; then
+            echo "::error::SUPABASE_URL / SUPABASE_PUBLISHABLE_KEY secrets are not set"
+            exit 1
+          fi
+          # Anonymous read: RLS returns no rows, but the query still runs in Postgres.
+          status=$(curl -sS -o /dev/null -w "%{http_code}" \
+            -H "apikey: $SUPABASE_PUBLISHABLE_KEY" \
+            "$SUPABASE_URL/rest/v1/profiles?select=id&limit=1")
+          echo "HTTP $status"
+          test "$status" = "200"

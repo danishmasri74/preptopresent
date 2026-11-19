@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://preptopresent.app/schemas/jobs/job.schema.json",
+  "title": "Job",
+  "description": "A background job row as exposed to the web app (mirrors public.jobs).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "kind", "status", "attempts", "created_at"],
+  "properties": {
+    "id": { "type": "string", "format": "uuid" },
+    "kind": { "type": "string", "enum": ["ping"] },
+    "status": { "type": "string", "enum": ["queued", "running", "succeeded", "failed"] },
+    "attempts": { "type": "integer", "minimum": 0 },
+    "payload": { "type": "object" },
+    "result": { "type": ["object", "null"] },
+    "error": { "type": ["string", "null"] },
+    "created_at": { "type": "string", "format": "date-time" }
+  }
+}

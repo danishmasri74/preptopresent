@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://preptopresent.app/schemas/jobs/ping.payload.schema.json",
+  "title": "PingPayload",
+  "description": "Payload for the Phase 0 smoke-test job.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "message": { "type": "string", "maxLength": 200 }
+  }
+}

@@ -1,6 +1,6 @@
 # PrepToPresent: Architecture
 
-> Status: v1.0 draft, 2026-11-16. Describes *how* we build what [spec.md](spec.md) defines. Feature IDs (F-xx) refer to the spec.
+> Status: v1.0 draft, 2026-11-16. Describes _how_ we build what [spec.md](spec.md) defines. Feature IDs (F-xx) refer to the spec.
 
 ## 1. System overview
 
@@ -37,22 +37,22 @@
 
 ## 2. Tech stack
 
-| Layer | Choice | Notes |
-|---|---|---|
-| Web app | **Next.js (App Router) + TypeScript (strict)** | Hosted on Vercel |
-| UI | **Tailwind CSS + shadcn/ui + Framer Motion** | Design tokens match the UX canvas (indigo `#3846C4`, amber `#C25E14`, ground `#F6F6F3`, Plus Jakarta Sans + Inter) |
-| Data fetching | Server components + server actions; TanStack Query for client polling-free updates via Supabase Realtime | |
-| Validation | **Zod** at every boundary (forms, route handlers, AI outputs) | |
-| Auth / DB / storage | **Supabase** (Postgres 15+, RLS, Storage with TUS resumable uploads, Realtime) | Migrations via Supabase CLI |
-| Job queue | **Postgres-backed queue** (`jobs` table with `FOR UPDATE SKIP LOCKED`) | No Redis needed; idempotent jobs with retries |
-| Worker | **Python 3.12, FastAPI, uv** in Docker (includes LibreOffice) | Hosted on Railway / Fly.io / Render |
-| Vision | **MediaPipe Tasks Vision** (Face Landmarker, Pose Landmarker lite) in a Web Worker | GPU delegate, CPU fallback |
-| Speech-to-text | **Deepgram** (pre-recorded, Nova family model) with word timestamps, confidence, filler words kept | Streaming API only if live nudges (F-26) ship |
-| Prosody | **Praat via parselmouth** (F0, intensity) | |
-| LLM | **Claude API, `claude-opus-5-5`** via the official Anthropic SDKs (Python in the worker, TypeScript only if needed in the web tier) | See §7 |
-| Text-to-speech | **ElevenLabs** (streaming) for examiner voices | V1 (Q&A) |
-| Monitoring | Sentry (web + worker), structured JSON logs | |
-| Testing | Vitest + Testing Library, Playwright (e2e), pytest | CI on GitHub Actions |
+| Layer               | Choice                                                                                                                              | Notes                                                                                                              |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| Web app             | **Next.js (App Router) + TypeScript (strict)**                                                                                      | Hosted on Vercel                                                                                                   |
+| UI                  | **Tailwind CSS + shadcn/ui + Framer Motion**                                                                                        | Design tokens match the UX canvas (indigo `#3846C4`, amber `#C25E14`, ground `#F6F6F3`, Plus Jakarta Sans + Inter) |
+| Data fetching       | Server components + server actions; TanStack Query for client polling-free updates via Supabase Realtime                            |                                                                                                                    |
+| Validation          | **Zod** at every boundary (forms, route handlers, AI outputs)                                                                       |                                                                                                                    |
+| Auth / DB / storage | **Supabase** (Postgres 15+, RLS, Storage with TUS resumable uploads, Realtime)                                                      | Migrations via Supabase CLI                                                                                        |
+| Job queue           | **Postgres-backed queue** (`jobs` table with `FOR UPDATE SKIP LOCKED`)                                                              | No Redis needed; idempotent jobs with retries                                                                      |
+| Worker              | **Python 3.12, FastAPI, uv** in Docker (includes LibreOffice)                                                                       | Hosted on Railway / Fly.io / Render                                                                                |
+| Vision              | **MediaPipe Tasks Vision** (Face Landmarker, Pose Landmarker lite) in a Web Worker                                                  | GPU delegate, CPU fallback                                                                                         |
+| Speech-to-text      | **Deepgram** (pre-recorded, Nova family model) with word timestamps, confidence, filler words kept                                  | Streaming API only if live nudges (F-26) ship                                                                      |
+| Prosody             | **Praat via parselmouth** (F0, intensity)                                                                                           |                                                                                                                    |
+| LLM                 | **Claude API, `claude-opus-5-5`** via the official Anthropic SDKs (Python in the worker, TypeScript only if needed in the web tier) | See §7                                                                                                             |
+| Text-to-speech      | **ElevenLabs** (streaming) for examiner voices                                                                                      | V1 (Q&A)                                                                                                           |
+| Monitoring          | Sentry (web + worker), structured JSON logs                                                                                         |                                                                                                                    |
+| Testing             | Vitest + Testing Library, Playwright (e2e), pytest                                                                                  | CI on GitHub Actions                                                                                               |
 
 ## 3. Repository layout
 
@@ -78,33 +78,33 @@ PrepToPresent/
 
 All tables carry `id uuid`, `created_at`, `updated_at`; user-owned tables carry `user_id` with an RLS policy `user_id = auth.uid()`.
 
-| Table | Key columns | Notes |
-|---|---|---|
-| `profiles` | name, university, field, goals[] | 1:1 with auth user |
-| `consents` | kind (analysis, age, save_video_default, study), granted, policy_version | Append-only history |
-| `confidence_surveys` | instrument, items jsonb, total, taken_at | Baseline and periodic |
-| `projects` | title, preset, time_limit_s (60–900), present_on, audience, qa_enabled, script_style, tone, status (active/archived) | |
-| `decks` | project_id, version, source_path, page_count, status | New row per upload (F-19) |
-| `slides` | deck_id, index, title, text, notes, visual_count, image_path, content_hash | `content_hash` matches unchanged slides on re-upload |
-| `rubrics` | project_id, source_path, raw_text, status (parsed/confirmed) | |
-| `rubric_criteria` | rubric_id, name, weight, descriptors, position | Weights sum to 100 (checked) |
-| `scripts` | project_id, deck_id, version, style, tone | |
-| `script_segments` | script_id, slide_id, text, keywords[], est_seconds, budget_seconds, criteria_ids[] | Budget editable (F-17) |
-| `gesture_cues` | segment_id, gesture_id, anchor_offset | `gesture_id` from fixed library |
-| `sessions` | project_id, type (full/range/qa/practice), slide_from, slide_to, settings jsonb, status, duration_s, audio_only, scoring_version | |
-| `session_checkins` | session_id, phase (pre/post), confidence 1–5 | |
-| `session_media` | session_id, audio_path, video_path (nullable), delete_after | Retention job deletes media, keeps results |
-| `slide_events` | session_id, t_ms, slide_index, kind (enter/pause/resume) | |
-| `transcripts` | session_id, words jsonb (word, start, end, confidence, filler), provider, model | |
-| `prosody_tracks` | session_id, f0 (compressed), intensity (compressed), hop_ms | |
-| `vision_tracks` | session_id, features (compressed), fps, coverage | Per-frame feature vector (§5.2) |
-| `metrics` | session_id, key, value, confidence, slide_index (nullable), scoring_version | One row per metric (and per slide where relevant) |
-| `scores` | session_id, category, value, scoring_version | Plus `overall` |
-| `moments` | session_id, t_ms, kind, polarity (positive/needs_work), detail | Feeds "moments to review" |
-| `feedback` | session_id, overview jsonb, model, prompt_version | Structured AI output |
-| `qa_drills` | project_id, persona, question_count, status | |
-| `qa_items` | drill_id, question, audio_path, transcript, evaluation jsonb | |
-| `jobs` | kind, payload jsonb, status, attempts, run_after, error, user_id | Queue + progress (Realtime) |
+| Table                | Key columns                                                                                                                      | Notes                                                |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| `profiles`           | name, university, field, goals[]                                                                                                 | 1:1 with auth user                                   |
+| `consents`           | kind (analysis, age, save_video_default, study), granted, policy_version                                                         | Append-only history                                  |
+| `confidence_surveys` | instrument, items jsonb, total, taken_at                                                                                         | Baseline and periodic                                |
+| `projects`           | title, preset, time_limit_s (60–900), present_on, audience, qa_enabled, script_style, tone, status (active/archived)             |                                                      |
+| `decks`              | project_id, version, source_path, page_count, status                                                                             | New row per upload (F-19)                            |
+| `slides`             | deck_id, index, title, text, notes, visual_count, image_path, content_hash                                                       | `content_hash` matches unchanged slides on re-upload |
+| `rubrics`            | project_id, source_path, raw_text, status (parsed/confirmed)                                                                     |                                                      |
+| `rubric_criteria`    | rubric_id, name, weight, descriptors, position                                                                                   | Weights sum to 100 (checked)                         |
+| `scripts`            | project_id, deck_id, version, style, tone                                                                                        |                                                      |
+| `script_segments`    | script_id, slide_id, text, keywords[], est_seconds, budget_seconds, criteria_ids[]                                               | Budget editable (F-17)                               |
+| `gesture_cues`       | segment_id, gesture_id, anchor_offset                                                                                            | `gesture_id` from fixed library                      |
+| `sessions`           | project_id, type (full/range/qa/practice), slide_from, slide_to, settings jsonb, status, duration_s, audio_only, scoring_version |                                                      |
+| `session_checkins`   | session_id, phase (pre/post), confidence 1–5                                                                                     |                                                      |
+| `session_media`      | session_id, audio_path, video_path (nullable), delete_after                                                                      | Retention job deletes media, keeps results           |
+| `slide_events`       | session_id, t_ms, slide_index, kind (enter/pause/resume)                                                                         |                                                      |
+| `transcripts`        | session_id, words jsonb (word, start, end, confidence, filler), provider, model                                                  |                                                      |
+| `prosody_tracks`     | session_id, f0 (compressed), intensity (compressed), hop_ms                                                                      |                                                      |
+| `vision_tracks`      | session_id, features (compressed), fps, coverage                                                                                 | Per-frame feature vector (§5.2)                      |
+| `metrics`            | session_id, key, value, confidence, slide_index (nullable), scoring_version                                                      | One row per metric (and per slide where relevant)    |
+| `scores`             | session_id, category, value, scoring_version                                                                                     | Plus `overall`                                       |
+| `moments`            | session_id, t_ms, kind, polarity (positive/needs_work), detail                                                                   | Feeds "moments to review"                            |
+| `feedback`           | session_id, overview jsonb, model, prompt_version                                                                                | Structured AI output                                 |
+| `qa_drills`          | project_id, persona, question_count, status                                                                                      |                                                      |
+| `qa_items`           | drill_id, question, audio_path, transcript, evaluation jsonb                                                                     |                                                      |
+| `jobs`               | kind, payload jsonb, status, attempts, run_after, error, user_id                                                                 | Queue + progress (Realtime)                          |
 
 **Storage buckets (all private):** `decks`, `slide-images`, `rubrics`, `recordings` (audio/video), `qa-audio`. Paths are prefixed with `user_id/` and protected by storage policies; the client only gets short-lived signed URLs.
 
@@ -127,15 +127,15 @@ All tables carry `id uuid`, `created_at`, `updated_at`; user-owned tables carry 
 
 Stages run in this order, writing results as they finish so the report fills in progressively (published via Realtime on the `jobs` row):
 
-| Stage | Work | Typical time (15 min run) |
-|---|---|---|
-| 1. Body & timing | Score vision features + slide timing (no external calls) | < 3 s |
-| 2. Transcribe | Deepgram pre-recorded on the audio file: words, timestamps, confidence, filler words | ~10–30 s |
-| 3. Prosody | parselmouth F0 + intensity (in parallel with 2) | ~3–5 s |
-| 4. Speech metrics | Pace, pauses, fillers (+ discourse-filler classification), clarity, pitch variety, volume, per slide | < 2 s |
-| 5. Content | Claude: rubric coverage + structure from transcript (structured output) | ~10–25 s |
-| 6. Scores & moments | Apply scoring config → `metrics`, `scores`, `moments` | < 1 s |
-| 7. Feedback | Claude: overview summary, 2 strengths, 2 focus areas citing moments (structured output) | ~10–20 s |
+| Stage               | Work                                                                                                 | Typical time (15 min run) |
+| ------------------- | ---------------------------------------------------------------------------------------------------- | ------------------------- |
+| 1. Body & timing    | Score vision features + slide timing (no external calls)                                             | < 3 s                     |
+| 2. Transcribe       | Deepgram pre-recorded on the audio file: words, timestamps, confidence, filler words                 | ~10–30 s                  |
+| 3. Prosody          | parselmouth F0 + intensity (in parallel with 2)                                                      | ~3–5 s                    |
+| 4. Speech metrics   | Pace, pauses, fillers (+ discourse-filler classification), clarity, pitch variety, volume, per slide | < 2 s                     |
+| 5. Content          | Claude: rubric coverage + structure from transcript (structured output)                              | ~10–25 s                  |
+| 6. Scores & moments | Apply scoring config → `metrics`, `scores`, `moments`                                                | < 1 s                     |
+| 7. Feedback         | Claude: overview summary, 2 strengths, 2 focus areas citing moments (structured output)              | ~10–20 s                  |
 
 Target total ≤ 90 s p90 (spec §7). Every stage is idempotent and can be re-run, which is also how a new scoring version re-scores old sessions (stages 4–7 only).
 
@@ -149,17 +149,18 @@ Target total ≤ 90 s p90 (spec §7). Every stage is idempotent and can be re-ru
 
 ## 7. AI design (Claude API)
 
-| Use | Input | Output | Notes |
-|---|---|---|---|
-| Rubric parsing | Rubric text or image | Criteria (name, weight, descriptors) | Structured output |
-| Script generation | Slides, notes, rubric, settings, gesture library | Per-slide script segments | Structured output; streaming; deck context cached for later edits |
-| Script edits | Segment + instruction (shorten, conversational, regenerate) | New segment | Reuses cached deck context |
-| Content analysis | Transcript, slide timeline, rubric | Coverage per criterion, structure checks | Structured output |
-| Session feedback | Computed metrics, moments, coverage, user goals | Overview summary, strengths, focus areas | Structured output; may only cite provided data |
-| Q&A questions | Slides, script, rubric, persona | Question list | Structured output |
-| Q&A evaluation | Question, answer transcript, project context | Relevance, completeness, length verdict, feedback, stronger example | Structured output |
+| Use               | Input                                                       | Output                                                              | Notes                                                             |
+| ----------------- | ----------------------------------------------------------- | ------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| Rubric parsing    | Rubric text or image                                        | Criteria (name, weight, descriptors)                                | Structured output                                                 |
+| Script generation | Slides, notes, rubric, settings, gesture library            | Per-slide script segments                                           | Structured output; streaming; deck context cached for later edits |
+| Script edits      | Segment + instruction (shorten, conversational, regenerate) | New segment                                                         | Reuses cached deck context                                        |
+| Content analysis  | Transcript, slide timeline, rubric                          | Coverage per criterion, structure checks                            | Structured output                                                 |
+| Session feedback  | Computed metrics, moments, coverage, user goals             | Overview summary, strengths, focus areas                            | Structured output; may only cite provided data                    |
+| Q&A questions     | Slides, script, rubric, persona                             | Question list                                                       | Structured output                                                 |
+| Q&A evaluation    | Question, answer transcript, project context                | Relevance, completeness, length verdict, feedback, stronger example | Structured output                                                 |
 
 **Conventions** (check the `claude-api` skill before writing AI code; the API changes often):
+
 - Model: **`claude-opus-5-5`** for all uses by default. Moving any route to a cheaper model (e.g. Sonnet or Haiku) or a lower effort level is a product decision for the project owner, made per route and backed by an eval set.
 - Adaptive thinking (Opus 5.5 can't disable thinking); set `output_config.effort` explicitly per route (Opus 5.5 defaults to `medium`).
 - Structured outputs via `output_config.format` / `messages.parse()` with JSON Schemas from `packages/schemas`. Forced `tool_choice` isn't available on this model, and assistant prefill isn't supported.
@@ -201,12 +202,12 @@ Per 15-min full run: transcription (~15 audio minutes), 2 Claude calls (content 
 
 ## 12. Delivery phases
 
-| Phase | Scope | Exit criteria |
-|---|---|---|
-| 0. Setup | Monorepo scaffold, Supabase project, CI, design tokens, CLAUDE.md commands | `pnpm dev` + worker run locally; CI green |
-| 1. Foundation | Auth, onboarding (F-01–04), projects (F-10–11), deck ingest (F-12–13), settings privacy (F-06) | A user can sign up, create a project and see extracted slides |
-| 2. AI prep | Rubric parse + review (F-14–15), script generation + prep workspace (F-16–17) | Script generated and editable for a real deck |
+| Phase             | Scope                                                                                                                                                                            | Exit criteria                                                 |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| 0. Setup          | Monorepo scaffold, Supabase project, CI, design tokens, CLAUDE.md commands                                                                                                       | `pnpm dev` + worker run locally; CI green                     |
+| 1. Foundation     | Auth, onboarding (F-01–04), projects (F-10–11), deck ingest (F-12–13), settings privacy (F-06)                                                                                   | A user can sign up, create a project and see extracted slides |
+| 2. AI prep        | Rubric parse + review (F-14–15), script generation + prep workspace (F-16–17)                                                                                                    | Script generated and editable for a real deck                 |
 | 3. Rehearsal core | Setup (F-20–22), live (F-24–25), recording + resumable upload (F-31), speech pipeline + report overview / slides / transcript (F-30, F-32, F-34–35), history + compare (F-39–41) | End-to-end audio rehearsal with scores and feedback in ≤ 90 s |
-| 4. Body language | Vision worker + calibration, body metrics, playback lanes (F-33), gesture rig + cues (F-18) | Body-language scores + gesture cues live |
-| 5. Engagement | Warmup (F-23), Q&A drill (F-50–53), nudges/countdown/practice (F-26–28), rubric tab, data-quality notices, practise-this (F-36–38), deck re-upload (F-19) | All V1 features complete |
-| 6. Hardening | Accessibility audit, performance on low-end laptops, security review, retention jobs, evaluation study | Spec §7 requirements verified |
+| 4. Body language  | Vision worker + calibration, body metrics, playback lanes (F-33), gesture rig + cues (F-18)                                                                                      | Body-language scores + gesture cues live                      |
+| 5. Engagement     | Warmup (F-23), Q&A drill (F-50–53), nudges/countdown/practice (F-26–28), rubric tab, data-quality notices, practise-this (F-36–38), deck re-upload (F-19)                        | All V1 features complete                                      |
+| 6. Hardening      | Accessibility audit, performance on low-end laptops, security review, retention jobs, evaluation study                                                                           | Spec §7 requirements verified                                 |

@@ -1,0 +1,8 @@
+node_modules
+.next
+pnpm-lock.yaml
+services/worker
+spikes
+supabase/.temp
+apps/web/AGENTS.md
+apps/web/components/ui

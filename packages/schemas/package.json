@@ -1,0 +1,12 @@
+{
+  "name": "@preptopresent/schemas",
+  "version": "0.1.0",
+  "private": true,
+  "description": "JSON Schemas shared by the web app (Zod) and the worker (Pydantic)",
+  "exports": {
+    "./jobs/*.json": "./jobs/*.json"
+  },
+  "files": [
+    "jobs"
+  ]
+}
