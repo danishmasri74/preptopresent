@@ -1,0 +1,14 @@
+Presentation assessment criteria (copied from the module guide)
+
+1. Introduction and objectives - 15%
+   Clear opening that states the aim of the talk and why it matters.
+2. Background research - 20%
+   Shows understanding of relevant literature and existing solutions.
+3. Approach / design - 25%
+   Explains the approach and justifies key decisions.
+4. Findings - 20%
+   Presents results clearly with appropriate visuals.
+5. Delivery and timing - 20%
+   Speaks clearly, maintains eye contact, finishes within the time limit.
+
+Total: 100%

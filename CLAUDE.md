@@ -12,29 +12,29 @@ Read the relevant spec and architecture sections before starting a feature. If c
 
 - Solo presentations only; talks 1–15 minutes (no score under 1 minute; auto-stop at the limit).
 - Desktop web only (no mobile layouts needed); latest Chrome, Edge, Firefox.
-- Body tracking runs in the browser (MediaPipe in a Web Worker, 10 fps adaptive to 5). Raw video and landmarks never leave the device; only compact feature vectors do. Video is uploaded only if the user opted in.
+- Body tracking runs in the browser (MediaPipe in a Web Worker, 10 fps adaptive to 5). Landmarks never leave the device; only compact feature vectors do. Rehearsal videos are saved privately to Cloudflare R2 (replay and comparison on any device) and kept until the user deletes them.
 - Scores are recomputable from stored raw data and always carry a `scoring_version`. Changing any threshold or weight bumps the version.
 
 ## Stack
 
-Next.js (App Router, TypeScript strict) + Tailwind + shadcn/ui + Framer Motion · Supabase (Auth, Postgres + RLS, Storage, Realtime) · Python 3.12 worker (FastAPI, uv) · Deepgram · parselmouth · Claude API · ElevenLabs (Q&A voices).
+Next.js (App Router, TypeScript strict) + Tailwind + shadcn/ui + Framer Motion · Supabase (Auth, Postgres + RLS, Storage, Realtime) · Python 3.12 worker (FastAPI, uv) · Cloudflare R2 (videos) · ElevenLabs (Scribe v3 transcription, Eleven v4 Q&A voices) · parselmouth · Claude API.
 
 ## Commands
 
 Run from the repo root unless noted. Package manager: **pnpm** (web), **uv** (worker).
 
-| Task                                   | Command                                                                                                             |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| Install everything                     | `pnpm install` and `cd services/worker && uv sync`                                                                  |
-| Web dev server (http://localhost:3000) | `pnpm dev`                                                                                                          |
-| Web lint / typecheck / tests / build   | `pnpm --filter web lint` · `pnpm --filter web typecheck` · `pnpm --filter web test` · `pnpm --filter web build`     |
-| Format (Prettier) / check              | `pnpm format` · `pnpm format:check`                                                                                 |
-| Worker tests / lint / format           | `cd services/worker && uv run pytest -q` · `uv run ruff check .` · `uv run ruff format .`                           |
-| Worker health API                      | `cd services/worker && uv run uvicorn app.main:app --reload --port 8000`                                            |
-| Worker job runner                      | `cd services/worker && uv run python -m app.runner` (needs `DATABASE_URL`)                                          |
-| Supabase CLI                           | `pnpm exec supabase …` (e.g. `migration new <name>`)                                                                |
-| Apply migrations to the dev database   | `pnpm exec supabase db push --remote="$DATABASE_URL"` (read the URL from `services/worker/.env`; `--dry-run` first) |
-| End-to-end smoke test                  | start the worker, then `pnpm --filter web smoke:e2e`                                                                |
+| Task                                   | Command                                                                                                               |
+| -------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| Install everything                     | `pnpm install` and `cd services/worker && uv sync`                                                                    |
+| Web dev server (http://localhost:3000) | `pnpm dev`                                                                                                            |
+| Web lint / typecheck / tests / build   | `pnpm --filter web lint` · `pnpm --filter web typecheck` · `pnpm --filter web test` · `pnpm --filter web build`       |
+| Format (Prettier) / check              | `pnpm format` · `pnpm format:check`                                                                                   |
+| Worker tests / lint / format           | `cd services/worker && uv run pytest -q` · `uv run ruff check .` · `uv run ruff format .`                             |
+| Worker health API                      | `cd services/worker && uv run uvicorn app.main:app --reload --port 8000`                                              |
+| Worker job runner                      | `cd services/worker && uv run python -m app.runner` (needs `DATABASE_URL`)                                            |
+| Supabase CLI                           | `pnpm exec supabase …` (e.g. `migration new <name>`)                                                                  |
+| Apply migrations to the dev database   | `pnpm exec supabase db push --remote="$DATABASE_URL"` (read the URL from `services/worker/.env`; `--dry-run` first)   |
+| End-to-end smoke tests                 | start the worker, then `pnpm --filter web smoke:e2e` (auth/queue) and `pnpm --filter web smoke:deck` (slide pipeline) |
 
 Notes:
 
@@ -49,8 +49,8 @@ Notes:
 **General**
 
 - Validate every boundary with Zod (web) / Pydantic (worker). Shared JSON Schemas live in `packages/schemas`.
-- Every user-owned table has `user_id` and an RLS policy; every storage bucket is private with path-prefix policies. No exceptions.
-- Secrets (Anthropic, Deepgram, ElevenLabs, Supabase service role) only in server or worker env vars. Never in client code, logs or commits. `.env.example` lists names only.
+- Every user-owned table has `user_id` and an RLS policy; every storage bucket is private with path-prefix policies. No exceptions. R2 has no RLS: only the server issues presigned URLs, after checking ownership in Postgres.
+- Secrets (Anthropic, ElevenLabs, Cloudflare R2, Supabase service role) only in server or worker env vars. Never in client code, logs or commits. `.env.example` lists names only.
 - Database changes only through Supabase migrations in `supabase/migrations`.
 - Jobs must be idempotent and safe to retry.
 

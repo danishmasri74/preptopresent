@@ -10,7 +10,8 @@
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "smoke:e2e": "node --env-file=.env.local scripts/smoke-e2e.mjs"
+    "smoke:e2e": "node --env-file=.env.local scripts/smoke-e2e.mjs",
+    "smoke:deck": "node --env-file=.env.local scripts/smoke-deck.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",

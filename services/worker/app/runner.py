@@ -11,8 +11,10 @@ from typing import Any
 import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
+from supabase import create_client
 
 from app.config import get_settings
+from app.context import JobContext
 from app.jobs import dispatch
 
 log = logging.getLogger("worker.runner")
@@ -46,7 +48,7 @@ update public.jobs
 """
 
 
-def run_once(conn: psycopg.Connection[dict[str, Any]]) -> bool:
+def run_once(conn: psycopg.Connection[dict[str, Any]], supabase: Any = None) -> bool:
     """Claim and run a single job. Returns True if a job was processed."""
     with conn.transaction():
         row = conn.execute(CLAIM_SQL).fetchone()
@@ -54,8 +56,11 @@ def run_once(conn: psycopg.Connection[dict[str, Any]]) -> bool:
         return False
 
     log.info("job %s (%s) attempt %s", row["id"], row["kind"], row["attempts"])
+    ctx = JobContext(
+        conn=conn, supabase=supabase, attempt=row["attempts"], max_attempts=row["max_attempts"]
+    )
     try:
-        result = dispatch(row["kind"], row["payload"] or {})
+        result = dispatch(row["kind"], row["payload"] or {}, ctx)
     except Exception as exc:  # noqa: BLE001 - any handler failure is recorded and retried
         log.exception("job %s failed", row["id"])
         with conn.transaction():
@@ -74,13 +79,17 @@ def run_forever() -> None:
     if settings.database_url is None:
         raise SystemExit("DATABASE_URL is not set; see services/worker/.env.example")
 
+    if settings.supabase_url is None or settings.supabase_secret_key is None:
+        raise SystemExit("SUPABASE_URL / SUPABASE_SECRET_KEY are not set; see .env.example")
+
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+    supabase = create_client(settings.supabase_url, settings.supabase_secret_key.get_secret_value())
     with psycopg.connect(
         settings.database_url.get_secret_value(), row_factory=dict_row, autocommit=True
     ) as conn:
         log.info("worker started")
         while True:
-            if not run_once(conn):
+            if not run_once(conn, supabase):
                 time.sleep(settings.poll_interval_s)
 
 
