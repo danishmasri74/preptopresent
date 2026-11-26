@@ -23,18 +23,18 @@ Next.js (App Router, TypeScript strict) + Tailwind + shadcn/ui + Framer Motion �
 
 Run from the repo root unless noted. Package manager: **pnpm** (web), **uv** (worker).
 
-| Task                                   | Command                                                                                                               |
-| -------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| Install everything                     | `pnpm install` and `cd services/worker && uv sync`                                                                    |
-| Web dev server (http://localhost:3000) | `pnpm dev`                                                                                                            |
-| Web lint / typecheck / tests / build   | `pnpm --filter web lint` · `pnpm --filter web typecheck` · `pnpm --filter web test` · `pnpm --filter web build`       |
-| Format (Prettier) / check              | `pnpm format` · `pnpm format:check`                                                                                   |
-| Worker tests / lint / format           | `cd services/worker && uv run pytest -q` · `uv run ruff check .` · `uv run ruff format .`                             |
-| Worker health API                      | `cd services/worker && uv run uvicorn app.main:app --reload --port 8000`                                              |
-| Worker job runner                      | `cd services/worker && uv run python -m app.runner` (needs `DATABASE_URL`)                                            |
-| Supabase CLI                           | `pnpm exec supabase …` (e.g. `migration new <name>`)                                                                  |
-| Apply migrations to the dev database   | `pnpm exec supabase db push --remote="$DATABASE_URL"` (read the URL from `services/worker/.env`; `--dry-run` first)   |
-| End-to-end smoke tests                 | start the worker, then `pnpm --filter web smoke:e2e` (auth/queue) and `pnpm --filter web smoke:deck` (slide pipeline) |
+| Task                                   | Command                                                                                                                              |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Install everything                     | `pnpm install` and `cd services/worker && uv sync`                                                                                   |
+| Web dev server (http://localhost:3000) | `pnpm dev`                                                                                                                           |
+| Web lint / typecheck / tests / build   | `pnpm --filter web lint` · `pnpm --filter web typecheck` · `pnpm --filter web test` · `pnpm --filter web build`                      |
+| Format (Prettier) / check              | `pnpm format` · `pnpm format:check`                                                                                                  |
+| Worker tests / lint / format           | `cd services/worker && uv run pytest -q` · `uv run ruff check .` · `uv run ruff format .`                                            |
+| Worker health API                      | `cd services/worker && uv run uvicorn app.main:app --reload --port 8000`                                                             |
+| Worker job runner                      | `cd services/worker && uv run python -m app.runner` (needs `DATABASE_URL`)                                                           |
+| Supabase CLI                           | `pnpm exec supabase …` (e.g. `migration new <name>`)                                                                                 |
+| Apply migrations to the dev database   | `pnpm exec supabase db push --remote="$DATABASE_URL"` (read the URL from `services/worker/.env`; `--dry-run` first)                  |
+| End-to-end smoke tests                 | start the worker, then `pnpm --filter web smoke:e2e` (auth/queue), `smoke:deck` (slide pipeline) and `smoke:rubric` (rubric reading) |
 
 Notes:
 
@@ -42,6 +42,7 @@ Notes:
 - `typecheck` runs `next typegen` first (generates route types such as `LayoutProps`).
 - Add shadcn components with `pnpm dlx shadcn@latest add <name>` from `apps/web`.
 - No Docker locally: we use a hosted Supabase dev project (`preptopresent-dev`), not `supabase start`.
+- `AI_MODE=mock` in `services/worker/.env` makes AI jobs return test answers (no key, no cost); `live` calls Claude.
 - Real secrets live only in git-ignored `apps/web/.env.local` and `services/worker/.env`. `.env.example` files are committed templates and must stay blank. Never print secret values in command output (mask connection strings).
 
 ## Conventions

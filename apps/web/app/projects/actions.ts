@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth/session";
 import { deckPath, newProjectSchema, registerDeckSchema } from "@/lib/projects";
+import { pasteRubricSchema, registerRubricSchema, rubricPath } from "@/lib/rubrics";
 
 export type ActionResult<T> = { ok: true; data: T } | { ok: false; message: string };
 
@@ -93,4 +94,71 @@ export async function registerDeck(input: {
 
   revalidatePath(`/projects/${projectId}`);
   return { ok: true, data: null };
+}
+
+async function queueRubric(
+  supabase: Awaited<ReturnType<typeof requireUser>>["supabase"],
+  projectId: string,
+  rubricId: string,
+): Promise<ActionResult<null>> {
+  const { error } = await supabase.rpc("enqueue_job", {
+    p_kind: "parse_rubric",
+    p_payload: { rubric_id: rubricId },
+  });
+  if (error) return { ok: false, message: GENERIC };
+  revalidatePath(`/projects/${projectId}`);
+  return { ok: true, data: null };
+}
+
+/**
+ * Called after the browser has uploaded a rubric file to Storage (spec F-14). Records it and
+ * queues reading. RLS + enqueue_job() re-check ownership server-side.
+ */
+export async function registerRubric(input: {
+  projectId: string;
+  rubricId: string;
+  filename: string;
+  size: number;
+  mimeType: string;
+  ext: string;
+}): Promise<ActionResult<null>> {
+  const parsed = registerRubricSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, message: "That upload looks invalid." };
+  const { projectId, rubricId, filename, size, mimeType, ext } = parsed.data;
+
+  const { supabase, userId } = await requireUser();
+  const { error } = await supabase.from("rubrics").insert({
+    id: rubricId,
+    user_id: userId,
+    project_id: projectId,
+    source_kind: "file",
+    source_path: rubricPath(userId, projectId, rubricId, ext),
+    original_filename: filename,
+    mime_type: mimeType,
+    file_size: size,
+  });
+  if (error) return { ok: false, message: GENERIC };
+  return queueRubric(supabase, projectId, rubricId);
+}
+
+/** The "paste text" option: stores the text and queues reading. */
+export async function pasteRubric(input: {
+  projectId: string;
+  text: string;
+}): Promise<ActionResult<null>> {
+  const parsed = pasteRubricSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? "Check the text." };
+  }
+  const { supabase, userId } = await requireUser();
+  const rubricId = crypto.randomUUID();
+  const { error } = await supabase.from("rubrics").insert({
+    id: rubricId,
+    user_id: userId,
+    project_id: parsed.data.projectId,
+    source_kind: "paste",
+    pasted_text: parsed.data.text,
+  });
+  if (error) return { ok: false, message: GENERIC };
+  return queueRubric(supabase, parsed.data.projectId, rubricId);
 }

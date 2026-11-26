@@ -1,6 +1,7 @@
 """Worker settings, read from environment variables (never hard-code secrets)."""
 
 from functools import lru_cache
+from typing import Literal
 
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -19,6 +20,8 @@ class Settings(BaseSettings):
     supabase_secret_key: SecretStr | None = None
     # Provider keys: only needed once the matching jobs exist (Phase 1+).
     anthropic_api_key: SecretStr | None = None
+    # "live" calls Claude; "mock" answers without the API (no key, no cost; for UI work and tests).
+    ai_mode: Literal["live", "mock"] = "live"
     # ElevenLabs: Scribe v3 transcription and Eleven v4 examiner voices (one key).
     elevenlabs_api_key: SecretStr | None = None
     # Cloudflare R2 (rehearsal videos): the worker only deletes videos (delete_media job).

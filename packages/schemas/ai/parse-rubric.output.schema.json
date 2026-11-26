@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://preptopresent.app/schemas/ai/parse-rubric.output.schema.json",
+  "title": "ParseRubricOutput",
+  "description": "What Claude returns when it reads a marking rubric or assignment brief (spec F-14). Used as the structured-output format of the parse_rubric job.",
+  "type": "object",
+  "properties": {
+    "is_rubric": {
+      "type": "boolean",
+      "description": "False when the document is not a rubric or brief (for example meeting minutes)."
+    },
+    "weight_unit": {
+      "type": "string",
+      "enum": ["percent", "points", "none"],
+      "description": "How the document states weights. 'none' means it gives no weights and the weights below are suggestions."
+    },
+    "criteria": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "weight": {
+            "type": "number",
+            "description": "As written in the document (percent or points); a suggested percentage when weight_unit is 'none'."
+          },
+          "description": { "type": "string" },
+          "levels": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "label": { "type": "string" },
+                "text": { "type": "string" }
+              },
+              "required": ["label", "text"],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": ["name", "weight", "description", "levels"],
+        "additionalProperties": false
+      }
+    },
+    "notes": {
+      "type": "string",
+      "description": "Short note for the student about anything uncertain, or an empty string."
+    }
+  },
+  "required": ["is_rubric", "weight_unit", "criteria", "notes"],
+  "additionalProperties": false
+}

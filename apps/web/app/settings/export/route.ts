@@ -10,40 +10,54 @@ import { EXPORT_FORMAT_VERSION, EXPORT_LINK_TTL_S, exportFilename } from "@/lib/
 export async function GET() {
   const { supabase, userId, email } = await requireUser();
 
-  const [profile, consents, surveys, projects, decks, slides] = await Promise.all([
-    supabase
-      .from("profiles")
-      .select("display_name, university, field_of_study, goals, onboarded_at, created_at")
-      .eq("id", userId)
-      .single(),
-    supabase
-      .from("consents")
-      .select("kind, granted, policy_version, created_at")
-      .order("created_at"),
-    supabase
-      .from("confidence_surveys")
-      .select("kind, instrument, items, created_at")
-      .order("created_at"),
-    supabase
-      .from("projects")
-      .select(
-        "id, title, preset, time_limit_s, present_on, audience, qa_enabled, script_style, tone, status, created_at, updated_at",
-      )
-      .order("created_at"),
-    supabase
-      .from("decks")
-      .select(
-        "id, project_id, version, original_filename, file_size, mime_type, page_count, status, source_path, created_at",
-      )
-      .order("created_at"),
-    supabase
-      .from("slides")
-      .select("deck_id, index, title, body_text, notes, visual_count")
-      .order("deck_id")
-      .order("index"),
-  ]);
+  const [profile, consents, surveys, projects, decks, slides, rubrics, criteria] =
+    await Promise.all([
+      supabase
+        .from("profiles")
+        .select("display_name, university, field_of_study, goals, onboarded_at, created_at")
+        .eq("id", userId)
+        .single(),
+      supabase
+        .from("consents")
+        .select("kind, granted, policy_version, created_at")
+        .order("created_at"),
+      supabase
+        .from("confidence_surveys")
+        .select("kind, instrument, items, created_at")
+        .order("created_at"),
+      supabase
+        .from("projects")
+        .select(
+          "id, title, preset, time_limit_s, present_on, audience, qa_enabled, script_style, tone, status, created_at, updated_at",
+        )
+        .order("created_at"),
+      supabase
+        .from("decks")
+        .select(
+          "id, project_id, version, original_filename, file_size, mime_type, page_count, status, source_path, created_at",
+        )
+        .order("created_at"),
+      supabase
+        .from("slides")
+        .select("deck_id, index, title, body_text, notes, visual_count")
+        .order("deck_id")
+        .order("index"),
+      supabase
+        .from("rubrics")
+        .select(
+          "id, project_id, source_kind, original_filename, mime_type, file_size, source_path, pasted_text, status, weights_suggested, model, prompt_version, created_at",
+        )
+        .order("created_at"),
+      supabase
+        .from("rubric_criteria")
+        .select("rubric_id, position, name, weight, description, levels")
+        .order("rubric_id")
+        .order("position"),
+    ]);
 
-  const failed = [profile, consents, surveys, projects, decks, slides].find((r) => r.error);
+  const failed = [profile, consents, surveys, projects, decks, slides, rubrics, criteria].find(
+    (r) => r.error,
+  );
   if (failed) {
     return NextResponse.json(
       { error: "We couldn't prepare your data. Please try again." },
@@ -58,8 +72,15 @@ export async function GET() {
         EXPORT_LINK_TTL_S,
       )
     : { data: [], error: null };
+  const rubricRows = rubrics.data ?? [];
+  const rubricPaths = rubricRows.map((r) => r.source_path).filter((p): p is string => Boolean(p));
+  const signedRubrics = rubricPaths.length
+    ? await supabase.storage.from("rubrics").createSignedUrls(rubricPaths, EXPORT_LINK_TTL_S)
+    : { data: [], error: null };
   const linkByPath = new Map(
-    (signed.data ?? []).filter((s) => s.path && s.signedUrl).map((s) => [s.path, s.signedUrl]),
+    [...(signed.data ?? []), ...(signedRubrics.data ?? [])]
+      .filter((s) => s.path && s.signedUrl)
+      .map((s) => [s.path, s.signedUrl]),
   );
 
   const now = new Date();
@@ -92,6 +113,31 @@ export async function GET() {
               body_text: s.body_text,
               notes: s.notes,
               visual_count: s.visual_count,
+            })),
+        })),
+      rubrics: rubricRows
+        .filter((r) => r.project_id === p.id)
+        .map((r) => ({
+          id: r.id,
+          source_kind: r.source_kind,
+          original_filename: r.original_filename,
+          mime_type: r.mime_type,
+          file_size: r.file_size,
+          pasted_text: r.pasted_text,
+          status: r.status,
+          weights_suggested: r.weights_suggested,
+          read_by: r.model,
+          prompt_version: r.prompt_version,
+          created_at: r.created_at,
+          download_url: r.source_path ? (linkByPath.get(r.source_path) ?? null) : null,
+          criteria: (criteria.data ?? [])
+            .filter((c) => c.rubric_id === r.id)
+            .map((c) => ({
+              position: c.position,
+              name: c.name,
+              weight: c.weight,
+              description: c.description,
+              levels: c.levels,
             })),
         })),
     })),

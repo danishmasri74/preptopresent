@@ -8,6 +8,11 @@ type Props = {
   onFile: (file: File | null) => void;
   disabled?: boolean;
   labelledBy?: string;
+  /** Overrides for non-deck files (defaults describe a PDF deck). */
+  accept?: string;
+  prompt?: string;
+  hint?: string;
+  badge?: (file: File) => string;
 };
 
 function formatSize(bytes: number) {
@@ -17,7 +22,16 @@ function formatSize(bytes: number) {
 }
 
 /** File picker with drag-and-drop. A real <input type="file"> keeps it keyboard accessible. */
-export function DeckDropzone({ file, onFile, disabled, labelledBy }: Props) {
+export function DeckDropzone({
+  file,
+  onFile,
+  disabled,
+  labelledBy,
+  accept = "application/pdf,.pdf",
+  prompt = "Drop your slides here, or choose a file",
+  hint = "PDF up to 100 MB. From PowerPoint or Google Slides, export as PDF.",
+  badge = () => "PDF",
+}: Props) {
   const inputId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
@@ -43,7 +57,7 @@ export function DeckDropzone({ file, onFile, disabled, labelledBy }: Props) {
       {file ? (
         <>
           <span className="flex h-12 w-10 shrink-0 items-center justify-center rounded-md bg-primary text-[11px] font-bold text-primary-foreground">
-            PDF
+            {badge(file)}
           </span>
           <span className="min-w-0 flex-1">
             <span className="block truncate font-semibold">{file.name}</span>
@@ -52,10 +66,8 @@ export function DeckDropzone({ file, onFile, disabled, labelledBy }: Props) {
         </>
       ) : (
         <span className="flex-1">
-          <span className="block font-semibold">Drop your slides here, or choose a file</span>
-          <span className="block text-sm text-muted-foreground">
-            PDF up to 100 MB. From PowerPoint or Google Slides, export as PDF.
-          </span>
+          <span className="block font-semibold">{prompt}</span>
+          <span className="block text-sm text-muted-foreground">{hint}</span>
         </span>
       )}
       <label
@@ -70,7 +82,7 @@ export function DeckDropzone({ file, onFile, disabled, labelledBy }: Props) {
           ref={inputRef}
           id={inputId}
           type="file"
-          accept="application/pdf,.pdf"
+          accept={accept}
           className="sr-only"
           aria-labelledby={labelledBy}
           disabled={disabled}

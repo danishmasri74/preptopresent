@@ -57,7 +57,11 @@ def run_once(conn: psycopg.Connection[dict[str, Any]], supabase: Any = None) -> 
 
     log.info("job %s (%s) attempt %s", row["id"], row["kind"], row["attempts"])
     ctx = JobContext(
-        conn=conn, supabase=supabase, attempt=row["attempts"], max_attempts=row["max_attempts"]
+        conn=conn,
+        supabase=supabase,
+        attempt=row["attempts"],
+        max_attempts=row["max_attempts"],
+        extra={"job_id": row["id"]},
     )
     try:
         result = dispatch(row["kind"], row["payload"] or {}, ctx)
@@ -83,6 +87,10 @@ def run_forever() -> None:
         raise SystemExit("SUPABASE_URL / SUPABASE_SECRET_KEY are not set; see .env.example")
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+    if settings.ai_mode == "mock":
+        log.warning("AI_MODE=mock: AI jobs return test answers, not real readings")
+    elif settings.anthropic_api_key is None:
+        log.warning("ANTHROPIC_API_KEY is not set: AI jobs will fail (set it, or AI_MODE=mock)")
     supabase = create_client(settings.supabase_url, settings.supabase_secret_key.get_secret_value())
     with psycopg.connect(
         settings.database_url.get_secret_value(), row_factory=dict_row, autocommit=True

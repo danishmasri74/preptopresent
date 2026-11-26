@@ -48,4 +48,4 @@ def ping(payload: dict[str, Any], ctx: JobContext) -> dict[str, Any]:
 
 
 # Register handlers that live in their own modules.
-from app import delete_account, ingest_deck  # noqa: E402,F401
+from app import delete_account, ingest_deck, parse_rubric  # noqa: E402,F401

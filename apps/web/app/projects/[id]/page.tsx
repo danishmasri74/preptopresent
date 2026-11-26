@@ -3,7 +3,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getProfile } from "@/lib/auth/session";
 import { DECK_ERROR_MESSAGES, bodyPreview, formatMinutes, presetLabel } from "@/lib/projects";
+import type { RubricCriterion } from "@/lib/rubrics";
 import { DeckUploader, ProcessingWatcher } from "./deck-panels";
+import { RubricPanel, type RubricSummary } from "./rubric-panel";
 
 export const metadata: Metadata = { title: "Project" };
 
@@ -45,6 +47,26 @@ export default async function ProjectPage({ params, searchParams }: PageProps<"/
     .limit(1)
     .maybeSingle();
   const deck = deckRow as Deck | null;
+
+  const { data: rubricRow } = await supabase
+    .from("rubrics")
+    .select(
+      "id, status, error_code, source_kind, original_filename, weights_suggested, model, created_at",
+    )
+    .eq("project_id", id)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const rubric = rubricRow as RubricSummary | null;
+  let criteria: RubricCriterion[] = [];
+  if (rubric?.status === "parsed" || rubric?.status === "confirmed") {
+    const { data } = await supabase
+      .from("rubric_criteria")
+      .select("id, position, name, weight, description")
+      .eq("rubric_id", rubric.id)
+      .order("position");
+    criteria = (data ?? []) as RubricCriterion[];
+  }
 
   let slides: (Slide & { imageUrl: string | null })[] = [];
   if (deck?.status === "ready") {
@@ -116,6 +138,13 @@ export default async function ProjectPage({ params, searchParams }: PageProps<"/
                   usually fixes this.
                 </p>
               ) : null}
+              <RubricPanel
+                key={rubric?.id ?? "none"}
+                userId={userId}
+                projectId={id}
+                rubric={rubric}
+                criteria={criteria}
+              />
               <div className="flex items-baseline justify-between gap-4">
                 <h2 className="text-xl font-bold">Your slides</h2>
                 <p className="text-sm text-muted-foreground">
